@@ -1,12 +1,12 @@
 # Fyntrest Bytes
 
-Turns a finance news article into a branded 1080×1920 Instagram story: a real screenshot of the article's headline, a short punchy line, two lines of context, and "What it means for you" for Indian students and young earners. All of it is drawn on the Fyntrest Bytes background, inside Instagram's safe zones.
+Turns a finance news article into a branded 1080×1920 Instagram story: the article's news photo, a short punchy line, two lines of context, "What it means for you" for Indian students and young earners, and the source at the bottom. All of it is drawn on the Fyntrest Bytes background, inside Instagram's safe zones. (The laptop tools use a screenshot of the headline instead of the photo.)
 
 There are three ways to make one, all free to run:
 
 | | Who uses it | How |
 |---|---|---|
-| **Team web app** (`cloudflare/`) | Anyone on the team, on a phone | Paste a link or type a topic. Live at https://fyntrest-bytes.fyntrest-bytes.workers.dev |
+| **Team web app** (`cloudflare/`) | Anyone on the team, on a phone | Paste a link or type a topic; story with the news photo. Live at https://fyntrest-bytes.fyntrest-bytes.workers.dev |
 | **Laptop tools** (repo root) | One person at a laptop, with Claude Code | Fetch the day's news, write `stories.json`, render the PNGs |
 | **Claude Maker page** (`artifact/`) | Team members with Claude accounts | Upload a headline screenshot; Claude drafts the words in the page |
 
@@ -15,20 +15,20 @@ There are three ways to make one, all free to run:
 ```
 phone ──POST /api/story {query}──▶ Worker (src/worker.js)
                                      ├─ topic? → search free publisher RSS feeds (ET, Mint, Business Standard, BBC, CNBC)
-                                     ├─ headless Chromium (Cloudflare Browser Run) → accept cookie wall,
-                                     │   strip popups/images, screenshot just the <h1>, read the article text
+                                     ├─ plain download of the article page → title, summary, text, preview photo (og:image)
+                                     │   (only if the site refuses: Cloudflare's headless browser reads it instead)
+                                     ├─ download the photo → data: URL (the phone's canvas can't load other sites' images)
                                      └─ Workers AI (Llama 3.3 70B) → tag, source, hook, body, takeaway (JSON)
-phone ◀── headline PNG (base64) + text ──┘
+phone ◀── photo + text ─────────────┘
 phone draws the story on <canvas> (public/index.html) → Share (Web Share API) / Download
 ```
 
-The image is drawn on the phone, so editing the words re-renders instantly and costs no server time.
+Story layout, top to bottom: tag · date, news photo (a headline card when the article has none), the big line, context, "What it means for you", and **Source: publication · website**. The image is drawn on the phone, so editing the words re-renders instantly and costs no server time.
 
-**Free-plan budget.** Browser Run on Workers Free allows 10 browser-minutes a day (resets 00:00 UTC = 5:30 am IST) and 1 new browser every 20 s. A story costs about 10–20 s, so roughly 30–50 stories a day for the whole team. The Worker closes the browser as soon as the screenshot is taken, waits for a free slot when two people start at once, checks the day's usage before launching, and the page shows "About N stories left today". Workers AI's free daily allowance covers far more stories than the browser does.
+**Free-plan budget.** Normal stories use no browser at all (a plain download plus Workers AI), so there is no practical daily cap. Workers AI's free daily allowance covers well over a hundred stories. The headless browser is only a backup for sites that refuse plain downloads; it has 10 browser-minutes a day (resets 00:00 UTC = 5:30 am IST) and 1 new browser every 20 s, and the Worker closes it as soon as the page is read.
 
 **Files**
-- `src/worker.js`: API (`/api/story`, `/api/config`, `/api/status` for browser-usage diagnostics) and static assets
-- `src/page-scripts.js`: page-cleaning and headline-finding scripts, generated from `shot.py` by `gen_scripts.py` so both versions capture headlines the same way
+- `src/worker.js`: API (`/api/story`, `/api/config`, `/api/status` for backup-browser diagnostics) and static assets
 - `public/index.html`: the phone page and the story renderer
 - `wrangler.jsonc`: bindings (`MYBROWSER`, `AI`, `ASSETS`)
 
@@ -44,8 +44,9 @@ Optional `GEMINI_API_KEY` secret: only used if Workers AI fails, and only works 
 
 **Known limits**
 - Google News and GDELT block Cloudflare's servers, so topic search uses publisher RSS feeds. Moneycontrol's feed also blocks Cloudflare.
-- Cloudflare's browser runs in Europe (choosing the country is a paid feature), so some sites show cookie walls. The Worker clicks "Accept". If a screenshot still fails, or captures the wrong heading, the story shows the headline as a plain card instead.
-- `wrangler dev` cannot start the local browser on Windows ("spawn UNKNOWN"), so the screenshot path can only be tested on the deployed Worker.
+- Some sites refuse plain downloads from Cloudflare; those go through the backup browser (runs in Europe, so the Worker clicks "Accept" on cookie walls). If no photo can be found, the story shows the headline as a card.
+- News photos belong to the publishers. The story credits the source at the bottom; check with your own policy before reposting at scale.
+- `wrangler dev` cannot start the local browser on Windows ("spawn UNKNOWN"), so the backup-browser path can only be tested on the deployed Worker.
 
 ## Laptop tools (Python 3 + Playwright, uses the installed Microsoft Edge)
 

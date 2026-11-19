@@ -94,7 +94,7 @@
         <label>Big line (wrap the highlight in *stars*)<input id="f_hook" type="text"></label>
         <label>Context<textarea id="f_body" rows="2"></textarea></label>
         <label>What it means for you<textarea id="f_take" rows="3"></textarea></label>
-        <label>Website shown under the headline<input id="f_site" type="text"></label>
+        <label>Website (shown with the source at the bottom)<input id="f_site" type="text"></label>
       </div>
     </details>
     <p class="hint">Check the facts against the article before posting.</p>
@@ -114,7 +114,7 @@
   const $ = id => document.getElementById(id);
   const KEYS = ["tag", "source", "date", "hook", "body", "take", "site"];
   const store = { get: k => { try { return localStorage.getItem(k) || ""; } catch { return ""; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-  let needPw = false, story = null; // story = { head: Image|null, title }
+  let needPw = false, story = null; // story = { img: Image|null, title, note }
 
   function refreshConfig() {
     fetch("/api/config").then(r => r.json()).then(c => {
@@ -167,45 +167,50 @@
   function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
   const dims = im => ({ w: im.naturalWidth || im.width, h: im.naturalHeight || im.height });
 
-  function measure(v, s, gap, showBody) {
-    const cardW = ZW, padX = 28, padT = 28, padB = 20;
-    let hw = cardW - padX * 2, hh = 0, titleLines = null;
-    if (story.head) { const d = dims(story.head); hh = d.h * hw / d.w; if (hh > 360) { hw = hw * 360 / hh; hh = 360; } }
-    else { setFont(46, 700, F.serif); titleLines = wrap(story.title || v.hook.replace(/\*/g, ""), hw - 24); hh = titleLines.length * 46 * 1.3 + 8; }
-    const siteH = v.site ? 14 + 1 + 12 + 27 : 0;
-    const rowH = padT + hh + siteH + padB;
+  // Layout, top to bottom: tag · date, news photo (or a headline card when there is no photo),
+  // big line, context, "What it means for you", and the source at the very bottom.
+  function measure(v, s, gap, showBody, photoH) {
+    let cardH, titleLines = null;
+    if (story.img) cardH = photoH;
+    else { setFont(46, 700, F.serif); titleLines = wrap(story.title || v.hook.replace(/\*/g, ""), ZW - 80); cardH = 34 + titleLines.length * 46 * 1.3 + 30; }
     setFont(92 * s, 800, F.head); const hookLines = wrapRich(v.hook || " ", ZW); const hookH = hookLines.length * 92 * s;
     setFont(32 * s, 600, F.text);
     const bodyLines = showBody && v.body ? wrap(v.body, ZW) : []; const bodyH = bodyLines.length * 32 * s * 1.42;
     const takeLines = v.take ? wrap(v.take, ZW - 34) : []; const takeH = v.take ? 6 + 22 * 1.3 + 8 + takeLines.length * 32 * s * 1.38 + 6 : 0;
-    const metaH = 46, blocks = [metaH, rowH, hookH]; if (bodyH) blocks.push(bodyH); if (takeH) blocks.push(takeH);
+    const srcH = (v.source || v.site) ? 30 : 0;
+    const metaH = 46, blocks = [metaH, cardH, hookH]; if (bodyH) blocks.push(bodyH); if (takeH) blocks.push(takeH); if (srcH) blocks.push(srcH);
     const total = blocks.reduce((a, b) => a + b, 0) + gap * (blocks.length - 1);
-    return { s, gap, cardW, padX, padT, padB, hw, hh, titleLines, siteH, rowH, hookLines, hookH, bodyLines, bodyH, takeLines, takeH, metaH, total };
+    return { s, gap, cardH, titleLines, hookLines, hookH, bodyLines, bodyH, takeLines, takeH, srcH, metaH, total };
   }
   function fit(v) {
-    const zh = ZBOT - ZTOP; let gap = 36, s = 1, showBody = true, m = measure(v, s, gap, showBody);
-    if (m.total > zh) { gap = 28; m = measure(v, s, gap, showBody); }
-    while (m.total > zh && s > 0.85) { s -= 0.03; m = measure(v, s, gap, showBody); }
-    if (m.total > zh && v.body) { showBody = false; s = 1; m = measure(v, s, gap, showBody); while (m.total > zh && s > 0.85) { s -= 0.03; m = measure(v, s, gap, showBody); } }
-    while (m.total > zh && s > 0.72) { s -= 0.03; m = measure(v, s, gap, showBody); }
+    // Shrink in this order: the photo (down to 360 px), the spacing, the type a little, drop the context line, then the type further.
+    const zh = ZBOT - ZTOP;
+    let photoH = 0;
+    if (story.img) { const d = dims(story.img); photoH = Math.round(Math.min(Math.max(ZW * d.h / d.w, ZW * 0.5), ZW * 0.66)); }
+    let gap = 36, s = 1, showBody = true, m = measure(v, s, gap, showBody, photoH);
+    while (m.total > zh && story.img && photoH > 360) { photoH -= 10; m = measure(v, s, gap, showBody, photoH); }
+    if (m.total > zh) { gap = 28; m = measure(v, s, gap, showBody, photoH); }
+    while (m.total > zh && s > 0.88) { s -= 0.03; m = measure(v, s, gap, showBody, photoH); }
+    if (m.total > zh && v.body) { showBody = false; s = 1; m = measure(v, s, gap, showBody, photoH); while (m.total > zh && s > 0.88) { s -= 0.03; m = measure(v, s, gap, showBody, photoH); } }
+    while (m.total > zh && s > 0.72) { s -= 0.03; m = measure(v, s, gap, showBody, photoH); }
     m.fits = m.total <= zh; m.droppedBody = !showBody && !!v.body; return m;
   }
-  function drawCard(m, v, x, y) {
-    const w = m.cardW, h = m.rowH;
+  function drawCard(m, x, y) {
+    const w = ZW, h = m.cardH;
     ctx.save(); ctx.translate(x + w / 2, y + h / 2); ctx.rotate(-1.2 * Math.PI / 180); ctx.translate(-w / 2, -h / 2);
-    ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 70; ctx.shadowOffsetY = 30; rrect(0, 0, w, h, 30); ctx.fillStyle = "#fff"; ctx.fill(); ctx.restore();
-    rrect(0, 0, w, h, 30); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(123,124,255,.35)"; ctx.stroke();
+    ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 70; ctx.shadowOffsetY = 30; rrect(0, 0, w, h, 30); ctx.fillStyle = story.img ? "#222" : "#fff"; ctx.fill(); ctx.restore();
     ctx.save(); rrect(0, 0, w, h, 30); ctx.clip();
-    let cy = m.padT;
-    if (story.head) { ctx.drawImage(story.head, m.padX + (w - m.padX * 2 - m.hw) / 2, cy, m.hw, m.hh); }
-    else { setFont(46, 700, F.serif); ctx.fillStyle = "#111"; m.titleLines.forEach((l, i) => ctx.fillText(l, m.padX + 12, cy + 4 + (i + 0.8) * 46 * 1.3)); }
-    cy += m.hh;
-    if (v.site) {
-      cy += 14; ctx.fillStyle = C.rule; ctx.fillRect(m.padX, cy, w - m.padX * 2, 1); cy += 13;
-      ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(m.padX + 5, cy + 13, 5, 0, Math.PI * 2); ctx.fill();
-      setFont(21, 500, F.text, 0.4); ctx.fillStyle = C.site; ctx.fillText(v.site, m.padX + 20, cy + 20);
+    if (story.img) {
+      // cover-crop, keeping the upper-middle of the photo (where faces and logos usually are)
+      const d = dims(story.img), sc = Math.max(w / d.w, h / d.h), dw = d.w * sc, dh = d.h * sc;
+      ctx.drawImage(story.img, (w - dw) / 2, (h - dh) * 0.4, dw, dh);
+    } else {
+      setFont(46, 700, F.serif); ctx.fillStyle = "#111";
+      m.titleLines.forEach((l, i) => ctx.fillText(l, 40, 34 + (i + 0.8) * 46 * 1.3));
     }
-    ctx.restore(); ctx.restore();
+    ctx.restore();
+    rrect(0, 0, w, h, 30); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(123,124,255,.35)"; ctx.stroke();
+    ctx.restore();
   }
   function values() { const v = {}; KEYS.forEach(k => v[k] = $("f_" + k).value.trim()); return v; }
   function draw() {
@@ -218,9 +223,9 @@
     setFont(22, 700, F.text, 2.6); const tag = (v.tag || "News").toUpperCase(); const tw = ctx.measureText(tag).width + 36;
     const pg = ctx.createLinearGradient(ZX, 0, ZX + tw, 0); pg.addColorStop(0, C.accent); pg.addColorStop(1, C.accent2);
     rrect(ZX, y + 2, tw, 42, 21); ctx.fillStyle = pg; ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillText(tag, ZX + 18, y + 31);
-    setFont(25, 700, F.text, 3); ctx.fillStyle = C.muted; ctx.fillText([v.source, v.date].filter(Boolean).join(" · ").toUpperCase(), ZX + tw + 16, y + 32);
+    setFont(25, 700, F.text, 3); ctx.fillStyle = C.muted; ctx.fillText((v.date || "").toUpperCase(), ZX + tw + 16, y + 32);
     y += m.metaH + m.gap;
-    drawCard(m, v, ZX, y); y += m.rowH + m.gap;
+    drawCard(m, ZX, y); y += m.cardH + m.gap;
     setFont(92 * m.s, 800, F.head); const sp = ctx.measureText(" ").width;
     m.hookLines.forEach((line, i) => {
       let x = ZX; const by = y + (i + 0.82) * 92 * m.s;
@@ -233,6 +238,15 @@
       setFont(22, 700, F.text, 3.5); ctx.fillText("WHAT IT MEANS FOR YOU", ZX + 34, y + 28);
       setFont(32 * m.s, 600, F.text); ctx.fillStyle = C.fg; const lh = 32 * m.s * 1.38, top = y + 6 + 22 * 1.3 + 8;
       m.takeLines.forEach((l, i) => ctx.fillText(l, ZX + 34, top + i * lh + lh * 0.76));
+      y += m.takeH;
+    }
+    if (m.srcH) {
+      // Source, below the whole story
+      y += m.gap;
+      const label = "SOURCE", name = [v.source, v.site].filter(Boolean).join(" · ");
+      setFont(20, 700, F.text, 3); ctx.fillStyle = C.accent; ctx.fillText(label, ZX, y + 23);
+      const lw = ctx.measureText(label).width + 16;
+      setFont(24, 500, F.text, 0.3); ctx.fillStyle = C.muted; ctx.fillText(name, ZX + lw, y + 23);
     }
     $("note").textContent = [story.note, !m.fits ? "Too much text for the safe area. Shorten the big line or the takeaway." : m.droppedBody ? "The context line was left out so everything fits." : ""].filter(Boolean).join(" ");
   }
@@ -253,7 +267,7 @@
       const data = await r.json().catch(() => ({ error: "The server didn't answer properly. Try again." }));
       if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
       await Promise.all([bgReady, fontsReady]);
-      story = { head: data.headline ? await loadImg(data.headline) : null, title: data.title, note: data.note || "" };
+      story = { img: data.image ? await loadImg(data.image).catch(() => null) : null, title: data.title, note: data.note || "" };
       KEYS.forEach(k => $("f_" + k).value = (k === "site" ? data.site : data.fields[k]) || "");
       $("result").hidden = false; draw(); setStatus("");
       $("result").scrollIntoView({ behavior: "smooth", block: "start" });

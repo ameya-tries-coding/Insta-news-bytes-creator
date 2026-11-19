@@ -1,38 +1,36 @@
 // Fyntrest Bytes on Cloudflare Workers (free plan).
-// POST /api/story {query} -> headline screenshot (base64 PNG) + story text. The phone draws the story image.
+// POST /api/story {query} -> the article's news photo + story text. The phone draws the story image.
 //
+// How an article is read:
+//   1. a plain download of the page (no browser): title, summary, text and its preview photo (og:image)
+//   2. only if the site blocks that: Cloudflare's headless browser (free plan: 10 browser-minutes a day)
 // Text is written by Cloudflare Workers AI (free plan, no key). Optional secrets
 // (set with `npx wrangler secret put NAME`):
 //   TEAM_PASSWORD   when set, the page asks for it
 //   GEMINI_API_KEY  only used if Workers AI fails (Gemini's free tier must be available to your Google project)
 // Variable (wrangler.jsonc "vars"): GEMINI_MODEL, default gemini-2.5-flash
-//
-// Free-plan budget: 10 browser-minutes a day (resets 00:00 UTC = 5:30 am IST), 1 new browser every 20 s.
-// So the browser is closed the moment the screenshot is taken; nothing else runs while it is open.
 import puppeteer from "@cloudflare/puppeteer";
-import { CLEAN_JS, NO_IMAGES_JS, FIND_JS, RECT_JS } from "./page-scripts.js";
 
-const DAILY_SECONDS = 600;      // free plan: 10 browser-minutes a day
-const SECONDS_PER_STORY = 15;   // rough cost of one story, for the "stories left" estimate
-const DAILY_LIMIT_MSG = "Today's free screenshot time is used up. It resets at 5:30 am IST. Try again then.";
-const UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36";
+const DAILY_SECONDS = 600;      // free plan: 10 browser-minutes a day (only used for sites that block downloads)
+const DAILY_LIMIT_MSG = "This site needs the backup browser, and today's free browser time is used up. Try another link, or again after 5:30 am IST.";
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+const MAX_IMAGE_BYTES = 4_000_000;
 
+// Read in the backup browser: same fields as readArticleHtml().
 const ARTICLE_JS = `(() => {
   const meta = s => document.querySelector(s)?.content?.trim() || '';
-  const h1 = document.querySelector('[data-story-headline]') ||
-    [...document.querySelectorAll('h1')].find(h => h.innerText.trim().length > 15);
+  const h1 = [...document.querySelectorAll('h1')].find(h => h.innerText.trim().length > 15);
   const paras = [...document.querySelectorAll('article p, main p, p')]
     .map(p => p.innerText.trim()).filter(t => t.length > 80).slice(0, 12);
   return {
-    title: (h1?.innerText || meta('meta[property="og:title"]') || document.title || '').trim(),
+    title: (meta('meta[property="og:title"]') || h1?.innerText || document.title || '').trim(),
     description: meta('meta[property="og:description"]') || meta('meta[name="description"]'),
     site_name: meta('meta[property="og:site_name"]'),
+    image: meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]') || meta('meta[property="twitter:image"]'),
     text: paras.join('\\n\\n').slice(0, 7000),
     url: location.href,
   };
 })()`;
-
-const OG_TITLE_JS = `(document.querySelector('meta[property="og:title"]')?.content || document.querySelector('meta[name="twitter:title"]')?.content || '').trim()`;
 
 // Clicks the accept button of a cookie / consent wall, in the page or in its consent iframe.
 const CONSENT_JS = `(() => {
@@ -62,20 +60,14 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
-      if (url.pathname === "/api/config") {
-        const lim = await puppeteer.limits(env.MYBROWSER).catch(() => null);
-        const left = lim && typeof lim.usedBrowserTimeSeconds === "number" ? Math.max(0, DAILY_SECONDS - lim.usedBrowserTimeSeconds) : null;
-        return json({ password: !!env.TEAM_PASSWORD, ai: !!(env.AI || env.GEMINI_API_KEY), storiesLeft: left === null ? null : Math.floor(left / SECONDS_PER_STORY) });
-      }
+      if (url.pathname === "/api/config") return json({ password: !!env.TEAM_PASSWORD, ai: !!(env.AI || env.GEMINI_API_KEY) });
       if (url.pathname === "/api/status") {
-        // For checking the free browser allowance: open sessions and recent browser use (no secrets).
-        const [limits, sessions, history] = await Promise.all([
+        // Backup-browser allowance, for diagnostics (no secrets).
+        const [limits, recent] = await Promise.all([
           puppeteer.limits(env.MYBROWSER).catch(e => ({ error: String(e) })),
-          puppeteer.sessions(env.MYBROWSER).catch(e => ({ error: String(e) })),
-          puppeteer.history(env.MYBROWSER).catch(e => ({ error: String(e) })),
+          puppeteer.history(env.MYBROWSER).then(h => h.slice(0, 20)).catch(e => ({ error: String(e) })),
         ]);
-        const recent = Array.isArray(history) ? history.slice(0, 30) : history;
-        return json({ limits, sessions, recent });
+        return json({ limits, recent });
       }
       if (url.pathname === "/api/story" && request.method === "POST") {
         if (env.TEAM_PASSWORD && request.headers.get("x-team-password") !== env.TEAM_PASSWORD) throw new UserError("Wrong team password.", 401);
@@ -89,13 +81,111 @@ export default {
       const msg = String(e?.message || e);
       console.log("ERROR", msg);
       if (/time limit exceeded|exceeded for today|daily/i.test(msg)) return json({ error: DAILY_LIMIT_MSG }, 429);
-      if (/429|rate limit|too many/i.test(msg)) return json({ error: "Someone else is making a story right now. Try again in 20 seconds." }, 503);
+      if (/429|rate limit|too many/i.test(msg)) return json({ error: "This site needs the backup browser, which is busy. Try again in 20 seconds." }, 503);
       return json({ error: "Something went wrong making that story. Try again, or try another link." }, 500);
     }
   },
 };
 
-// ---------------------------------------------------------------- browser
+// ---------------------------------------------------------------- reading the article
+// 1) Plain download: fast, free, no browser time.
+async function readArticleHtml(link) {
+  let r;
+  try {
+    r = await fetch(link, { redirect: "follow", headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml", "accept-language": "en-IN,en;q=0.9" } });
+  } catch (e) { console.log("fetch failed", link, String(e)); return null; }
+  if (!r.ok || !(r.headers.get("content-type") || "").includes("html")) { console.log("fetch", r.status, link.slice(0, 80)); return null; }
+  const html = (await r.text()).slice(0, 1_500_000);
+  const meta = (attr, name) => {
+    const re = new RegExp(`<meta[^>]+${attr}=["']${name}["'][^>]*>`, "i");
+    const tag = (html.match(re) || [])[0] || "";
+    return decode((tag.match(/content=["']([^"']*)["']/i) || [])[1] || "");
+  };
+  const title = meta("property", "og:title") || meta("name", "twitter:title") || decode(((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || ""));
+  const paras = [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map(m => decode(m[1].replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim())
+    .filter(t => t.length > 80).slice(0, 12);
+  let image = meta("property", "og:image") || meta("property", "og:image:url") || meta("name", "twitter:image") || meta("property", "twitter:image");
+  if (!image) { const ld = html.match(/"image"\s*:\s*(?:\{[^}]*?"url"\s*:\s*)?\[?\s*"(https?:[^"]+)"/i); if (ld) image = ld[1].replace(/\\\//g, "/"); }
+  let abs = "";
+  try { abs = image ? new URL(image, r.url || link).href : ""; } catch { abs = ""; }
+  return {
+    title: title.trim(),
+    description: meta("property", "og:description") || meta("name", "description"),
+    site_name: meta("property", "og:site_name"),
+    image: abs,
+    text: paras.join("\n\n").slice(0, 7000),
+    url: r.url || link,
+  };
+}
+
+// 2) Backup browser, for sites that refuse plain downloads.
+async function readArticleBrowser(link, env) {
+  const browser = await getBrowser(env);
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent(UA);
+    await page.goto(link, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await sleep(1500);
+    if (await acceptConsent(page)) await sleep(1500);
+    return await page.evaluate(ARTICLE_JS);
+  } finally {
+    await browser.close().catch(() => {});  // stop the browser clock right away
+  }
+}
+
+// The photo, sent to the phone as a data: URL (the phone's canvas can't load other sites' images directly).
+async function fetchImage(src, referer) {
+  if (!src) return null;
+  try {
+    const r = await fetch(src, { headers: { "user-agent": UA, referer: referer || "", accept: "image/avif,image/webp,image/jpeg,image/png,image/*" } });
+    const type = (r.headers.get("content-type") || "").split(";")[0].trim();
+    if (!r.ok || !/^image\/(jpeg|png|webp|gif|avif)$/.test(type)) { console.log("image", r.status, type, src.slice(0, 80)); return null; }
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.length < 3000 || buf.length > MAX_IMAGE_BYTES) return null;  // tiny = icon or tracking pixel
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    return `data:${type};base64,${btoa(bin)}`;
+  } catch (e) { console.log("image failed", String(e)); return null; }
+}
+
+async function makeStory(query, env) {
+  const isLink = /^https?:\/\//i.test(query);
+  const hits = isLink ? [{ link: query, title: "", source: "", image: "", description: "" }] : await googleNews(query);
+  if (!hits.length) throw new UserError("No recent news found for that. Try different words or paste a link.", 404);
+
+  let info = null, hit = hits[0];
+  for (const h of hits.slice(0, 3)) {  // first result that downloads cleanly
+    const got = await readArticleHtml(h.link);
+    if (got && got.title) { info = got; hit = h; break; }
+  }
+  if (!info) {
+    // Every plain download was refused: one try with the backup browser, else use the feed's own details.
+    try { info = await readArticleBrowser(hit.link, env); }
+    catch (e) {
+      if (isLink) throw e;
+      console.log("browser fallback failed", String(e));
+    }
+  }
+  info = info || { title: hit.title, description: hit.description || "", site_name: hit.source, image: "", text: "", url: hit.link };
+  info.title = info.title || hit.title;
+  info.image = info.image || hit.image || "";
+  info.description = info.description || hit.description || "";
+  info.source_hint = hit.source;
+  if (!info.title) throw new UserError("Couldn't read that article. Try another link.", 422);
+
+  const [image, { copy, note }] = await Promise.all([fetchImage(info.image, info.url), writeCopy(info, env)]);
+  const notes = [note, image ? "" : "No usable photo on this article, so the headline is shown as a card instead."].filter(Boolean);
+  return {
+    image,
+    title: info.title,
+    site: hostname(info.url),
+    fields: { ...copy, date: istDate() },
+    note: notes.join(" "),
+  };
+}
+
+// ---------------------------------------------------------------- browser (backup only)
 async function getBrowser(env) {
   // The free plan allows 1 new browser every 20 s: wait for the slot (up to 20 s) instead of failing.
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -120,71 +210,6 @@ async function getBrowser(env) {
       await sleep(7000);  // 4 tries over ~21 s covers the "1 new browser every 20 s" rule
     }
   }
-}
-
-async function capture(page, link, expectedTitle = "") {
-  await page.goto(link, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  if (page.url().includes("news.google.com")) {
-    // Google News links forward to the publisher through a script.
-    await page.waitForFunction(() => !location.hostname.includes("news.google.com"), { timeout: 15_000 }).catch(() => {});
-    await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => {});
-  }
-  await sleep(2500);
-  // Cloudflare's browsers often run in Europe, where sites show cookie walls first: accept them.
-  if (await acceptConsent(page)) await sleep(2000);
-  if (!expectedTitle) expectedTitle = await page.evaluate(OG_TITLE_JS).catch(() => "");
-  for (let i = 0; i < 2; i++) { await page.evaluate(`(${CLEAN_JS})()`).catch(() => {}); await sleep(600); }
-  await page.evaluate(`(${NO_IMAGES_JS})()`).catch(() => {});
-  const found = await page.evaluate(`(${FIND_JS})()`).catch(() => null);
-  let headline = null;
-  if (found) {
-    await sleep(500);
-    const clip = (await page.evaluate(`(${RECT_JS})()`).catch(() => null)) || found.head;
-    if (clip && clip.width > 20 && clip.height > 10) {
-      headline = await page.screenshot({ clip, encoding: "base64" }).catch(() => null);
-    }
-  }
-  const info = await page.evaluate(ARTICLE_JS).catch(() => ({ title: "", description: "", site_name: "", text: "", url: page.url() }));
-  // A screenshot of the wrong heading (site name, section title) does not count.
-  if (expectedTitle && overlap(info.title, expectedTitle) < 2) { info.title = expectedTitle; headline = null; }
-  info.headline = headline;
-  return info;
-}
-
-async function makeStory(query, env) {
-  const isLink = /^https?:\/\//i.test(query);
-  const hits = isLink ? [{ link: query, title: "", source: "" }] : await googleNews(query);
-  if (!hits.length) throw new UserError("No recent news found for that. Try different words or paste a link.", 404);
-
-  const browser = await getBrowser(env);
-  let info = null;
-  try {
-    const page = await browser.newPage();
-    await page.setUserAgent(UA);
-    await page.setViewport({ width: 412, height: 915, deviceScaleFactor: 2.5, isMobile: true, hasTouch: true });
-    for (const hit of hits.slice(0, isLink ? 1 : 2)) {  // first result whose headline screenshots cleanly
-      let got;
-      try { got = await capture(page, hit.link, hit.title); } catch (e) { if (/limit|exceeded/i.test(String(e))) throw e; continue; }
-      got.source_hint = hit.source;
-      if (!got.title) got.title = hit.title;
-      if (got.headline) { info = got; break; }
-      info = info || got;
-    }
-  } finally {
-    await browser.close().catch(() => {});  // stop the browser clock right away
-  }
-  if (!info) info = { ...hits[0], url: hits[0].link, description: "", site_name: hits[0].source, text: "", source_hint: hits[0].source, headline: null };
-  if (!info.title) throw new UserError("Couldn't read that article. Try another link.", 422);
-
-  const { copy, note } = await writeCopy(info, env);
-  const notes = [note, info.headline ? "" : "This site blocked the screenshot, so the headline is shown as a plain card."].filter(Boolean);
-  return {
-    headline: info.headline ? "data:image/png;base64," + info.headline : null,
-    title: info.title,
-    site: hostname(info.url),
-    fields: { ...copy, date: istDate() },
-    note: notes.join(" "),
-  };
 }
 
 // ---------------------------------------------------------------- search
@@ -231,7 +256,7 @@ async function feedSearch(query) {
     if (score >= needed) scored.push({ ...it, score, time: Date.parse(it.pubDate) || 0 });
   }
   scored.sort((a, b) => b.score - a.score || b.time - a.time);
-  return scored.slice(0, 5).map(({ link, title, source }) => ({ link, title, source }));
+  return scored.slice(0, 5).map(({ link, title, source, image, description }) => ({ link, title, source, image, description }));
 }
 
 async function rssItems(url, extraHeaders = {}, max = 5) {
@@ -247,7 +272,8 @@ async function rssItems(url, extraHeaders = {}, max = 5) {
     let title = tag("title"), source = tag("source") || tag("News:Source");
     if (source && title.endsWith(" - " + source)) title = title.slice(0, -(source.length + 3));
     const link = tag("link");
-    if (link) hits.push({ link, title, source, description: tag("description").replace(/<[^>]+>/g, " "), pubDate: tag("pubDate") });
+    const img = (m[1].match(/<(?:media:content|media:thumbnail|enclosure)[^>]+url=["']([^"']+)["']/i) || [])[1] || "";
+    if (link) hits.push({ link, title, source, description: decode(tag("description").replace(/<[^>]+>/g, " ")).trim(), pubDate: tag("pubDate"), image: decode(img) });
     if (hits.length >= max) break;
   }
   return hits;
