@@ -1,0 +1,32 @@
+[
+  {
+    "url": "https://www.bbc.co.uk/news/articles/c6d01e8m15mko",
+    "tag": "Global",
+    "source": "BBC News",
+    "date": "17 Nov",
+    "hook": "UK firms say they <em>can't afford</em> to hire under-25s",
+    "body": "Rising employer costs mean young people are getting passed over. A new report wants to cut those costs for workers aged 21 to 24.",
+    "takeaway": "Entry-level jobs are getting tougher everywhere. Proof of skill, like a project or an internship, now counts as much as the degree."
+  },
+  {
+    "url": "https://www.livemint.com/money/personal-finance/prepay-7-9-car-loan-or-buy-mutual-funds-24-year-old-s-1-27-lakh-salary-21-lakh-portfolio-dilemma-sparks-debate-11794902175803.html",
+    "tag": "India",
+    "source": "Mint",
+    "date": "17 Nov",
+    "hook": "Pay off a 7.9% car loan or <em>invest</em> the money?",
+    "body": "A 24-year-old earning ₹1.27 lakh with a ₹21 lakh portfolio asked the internet. The whole debate comes down to one comparison.",
+    "takeaway": "Prepaying a loan is a guaranteed 7.9% return. Investing only wins if you can beat that after tax and sit through the bad years."
+  },
+  {
+    "url": "https://www.cnbc.com/2026/11/17/nvidia-stock-earnings-jensen-huang-resignation.html",
+    "tag": "Markets",
+    "source": "CNBC",
+    "date": "17 Nov",
+    "hook": "Nvidia's CEO <em>resigned</em>. Now investors are nervous.",
+    "body": "Jensen Huang co-founded the AI chip giant. With him gone, the shares are falling right before its earnings report.",
+    "takeaway": "When one person is the face of a company, their exit can move the stock overnight. That's key-person risk, and why you spread your money out.",
+    "image": "assets/photos/jensen-huang.jpg",
+    "focus": "center 35%",
+    "credit": "Anders Eidesvik, CC BY-SA 4.0"
+  }
+]

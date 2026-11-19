@@ -1,0 +1,451 @@
+<title>Fyntrest Bytes Maker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Google+Sans:wght@500;600;700&display=swap">
+<style>
+  /* Layout: phone-first tool. Live 9:16 preview on top (left column on wide screens), steps below, sticky download bar. */
+  :root {
+    --bg: #121214;
+    --panel: #1b1b20;
+    --line: #2c2c35;
+    --fg: #f4f4f6;
+    --muted: #a3a3b4;
+    --accent: #7b7cff;
+    --accent-2: #b057a8;
+    --danger: #ff6b81;
+    --head: "Barlow Condensed", "Arial Narrow", sans-serif;
+    --text: "Google Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: var(--text); font-size: 15px; line-height: 1.45;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 18px 110px;
+  }
+  .app { max-width: 1060px; margin: 0 auto; display: grid; gap: 22px; }
+  @media (min-width: 860px) {
+    .app { grid-template-columns: 380px minmax(0, 1fr); align-items: start; }
+    .preview { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 18px); }
+  }
+  header.top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  header.top h1 { margin: 0; font-family: var(--head); font-weight: 800; font-size: 34px; letter-spacing: .01em; line-height: 1; }
+  header.top h1 em { font-style: normal; color: var(--accent); }
+  header.top p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .preview { display: grid; gap: 10px; justify-items: center; }
+  .stage { width: 100%; max-width: 360px; aspect-ratio: 9 / 16; border-radius: 18px; overflow: hidden; background: #000; box-shadow: 0 0 0 1px var(--line), 0 20px 50px rgba(0,0,0,.5); }
+  .stage canvas { width: 100%; height: 100%; display: block; }
+  .preview-tools { display: flex; gap: 14px; align-items: center; color: var(--muted); font-size: 13px; flex-wrap: wrap; justify-content: center; }
+  .note { font-size: 13px; color: var(--muted); text-align: center; max-width: 360px; }
+  .note.warn { color: var(--danger); }
+  .example-flag { background: rgba(123,124,255,.14); color: #c9c9ff; border: 1px solid rgba(123,124,255,.35); padding: 6px 12px; border-radius: 999px; font-size: 12.5px; }
+
+  .steps { display: grid; gap: 14px; min-width: 0; }
+  section.step { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+  .step h2 { margin: 0; font-size: 15px; font-weight: 700; display: flex; gap: 10px; align-items: center; }
+  .step h2 .n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #0d0d12; font-size: 13px; flex: none; }
+  .step h2 .opt { color: var(--muted); font-weight: 500; font-size: 13px; }
+  .hint { margin: 0; color: var(--muted); font-size: 13px; }
+  .row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  label.f { display: grid; gap: 5px; font-size: 13px; color: var(--muted); min-width: 0; }
+  input[type=text], textarea, select {
+    width: 100%; background: #111116; color: var(--fg); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; font: inherit; font-size: 15px;
+  }
+  textarea { resize: vertical; min-height: 64px; }
+  input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, .drop:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .drop { position: relative; border: 1.5px dashed #3d3d4a; border-radius: 12px; padding: 14px; display: flex; gap: 12px; align-items: center; min-height: 72px; cursor: pointer; }
+  .drop input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .drop .thumb { width: 64px; height: 64px; border-radius: 8px; background: #0e0e12 center / contain no-repeat; flex: none; border: 1px solid var(--line); }
+  .drop .txt { display: grid; gap: 2px; min-width: 0; }
+  .drop .txt b { font-weight: 600; }
+  .drop .txt span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .check { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  button { font: inherit; border-radius: 10px; border: 1px solid var(--line); background: #24242c; color: var(--fg); padding: 10px 14px; cursor: pointer; font-weight: 600; }
+  button:hover { border-color: #46465a; }
+  button:disabled { opacity: .55; cursor: default; }
+  button.primary { background: linear-gradient(90deg, var(--accent), var(--accent-2)); border: 0; color: #fff; }
+  button.ghost { background: transparent; }
+  .status { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+  .status.err { color: var(--danger); }
+
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    background: rgba(18,18,20,.92); backdrop-filter: blur(10px); border-top: 1px solid var(--line);
+    padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  }
+  .bar .in { max-width: 1060px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+  .bar .fname { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .bar button { flex: none; padding: 12px 20px; }
+
+  .saveview[hidden] { display: none !important; }
+  .saveview { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.86); display: grid; place-items: center; padding: 20px; }
+  .saveview .box { display: grid; gap: 12px; justify-items: center; max-width: 360px; }
+  .saveview img { width: 100%; max-height: 70vh; object-fit: contain; border-radius: 12px; }
+  .saveview p { margin: 0; text-align: center; color: var(--fg); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1>Fyntrest <em>Bytes</em> Maker</h1>
+    <p>Headline screenshot, words, done. Exports a 1080×1920 story.</p>
+  </header>
+
+  <div class="preview">
+    <div class="stage"><canvas id="cv" width="1080" height="1920" aria-label="Story preview"></canvas></div>
+    <div class="preview-tools">
+      <label class="check"><input type="checkbox" id="zones"> Show no-go zones</label>
+      <span id="exampleFlag" class="example-flag">Example story · replace with yours</span>
+    </div>
+    <div id="fitNote" class="note"></div>
+  </div>
+
+  <div class="steps">
+    <section class="step">
+      <h2><span class="n">1</span>Headline screenshot</h2>
+      <p class="hint">Screenshot the article on your phone and crop it to just the headline text. Plain margins around it are trimmed for you.</p>
+      <div class="drop">
+        <input type="file" id="headFile" accept="image/*" aria-label="Choose headline screenshot">
+        <div class="thumb" id="headThumb"></div>
+        <div class="txt"><b>Choose screenshot</b><span id="headName">Example: CNBC headline</span></div>
+      </div>
+      <div class="row">
+        <label class="f">Website shown under it<input type="text" id="site" placeholder="livemint.com"></label>
+      </div>
+      <label class="check"><input type="checkbox" id="trim" checked> Trim plain margins</label>
+    </section>
+
+    <section class="step">
+      <h2><span class="n">2</span>Photo <span class="opt">optional</span></h2>
+      <p class="hint">Only add one when the story needs a face or a scene. It sits to the right of the screenshot.</p>
+      <div class="drop">
+        <input type="file" id="photoFile" accept="image/*" aria-label="Choose photo">
+        <div class="thumb" id="photoThumb"></div>
+        <div class="txt"><b>Choose photo</b><span id="photoName">Example: Jensen Huang</span></div>
+      </div>
+      <div class="inline"><button type="button" class="ghost" id="photoRemove">Remove photo</button></div>
+      <label class="f">Crop position (move to keep the face in frame)<input type="range" id="focus" min="0" max="100" value="35"></label>
+      <label class="f">Photo credit (if the licence asks for one)<input type="text" id="credit" placeholder="Name, CC BY-SA 4.0"></label>
+    </section>
+
+    <section class="step">
+      <h2><span class="n">3</span>Words</h2>
+      <p class="hint">Let Claude read the screenshot and draft the text, or type it yourself. Paste a few lines from the article for a more accurate draft.</p>
+      <label class="f">Article text (optional)<textarea id="article" rows="3" placeholder="Paste the first few paragraphs of the article"></textarea></label>
+      <div class="inline"><button type="button" class="primary" id="ask">Write it with Claude</button><span class="status" id="askStatus"></span></div>
+      <div class="row">
+        <label class="f">Tag<input type="text" id="tag" list="tags"></label>
+        <label class="f">Source<input type="text" id="source" placeholder="Mint"></label>
+        <label class="f">Date<input type="text" id="date"></label>
+      </div>
+      <datalist id="tags"><option value="India"><option value="Global"><option value="Markets"><option value="Tax"><option value="Jobs"><option value="Banking"></datalist>
+      <label class="f">Big line (wrap the highlight in *stars*)<input type="text" id="hook"></label>
+      <label class="f">Context, 1–2 short sentences<textarea id="body" rows="2"></textarea></label>
+      <label class="f">What it means for you<textarea id="take" rows="2"></textarea></label>
+    </section>
+  </div>
+</div>
+
+<div class="bar"><div class="in"><span class="fname" id="fname"></span><button type="button" class="primary" id="save">Download story</button></div></div>
+
+<div class="saveview" id="saveview" hidden>
+  <div class="box">
+    <img id="saveImg" alt="Finished story">
+    <p>Press and hold (or right-click) the image to save it.</p>
+    <button type="button" id="saveClose">Close</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const BG_SRC = "{{BG}}";
+  const SAMPLE = {
+    headline: "{{SAMPLE_HEAD}}",
+    photo: "{{SAMPLE_PHOTO}}",
+    site: "cnbc.com", tag: "Markets", source: "CNBC", date: "17 Nov",
+    hook: "Nvidia's CEO *resigned*. Now investors are nervous.",
+    body: "Jensen Huang co-founded the AI chip giant. With him gone, the shares are falling right before its earnings report.",
+    take: "When one person is the face of a company, their exit can move the stock overnight. That's key-person risk, and why you spread your money out.",
+    credit: "Anders Eidesvik, CC BY-SA 4.0", focus: 35,
+  };
+
+  // Story geometry: same safe zone and sizes as the desktop template.
+  const W = 1080, H = 1920, ZX = 64, ZTOP = 380, ZBOT = 1385, ZW = W - ZX * 2;
+  const C = { fg: "#f4f4f6", muted: "#b9b9c6", accent: "#7b7cff", accent2: "#b057a8", site: "#8a8a96", rule: "#e6e6ea" };
+  const F = { head: '"Barlow Condensed", "Arial Narrow", sans-serif', text: '"Google Sans", system-ui, sans-serif' };
+
+  const $ = id => document.getElementById(id);
+  const cv = $("cv"), ctx = cv.getContext("2d");
+  const fields = ["site", "tag", "source", "date", "hook", "body", "take", "credit", "article"];
+  const state = { bg: null, head: null, headRaw: null, headBlob: null, photo: null, example: true };
+
+  const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  const today = () => new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+  // ---------- image prep ----------
+  function trimMargins(img) {
+    const c = document.createElement("canvas"); c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+    const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0);
+    const { width: w, height: h } = c, d = x.getImageData(0, 0, w, h).data;
+    const ref = [d[0], d[1], d[2]], tol = 22;
+    const same = i => Math.abs(d[i] - ref[0]) < tol && Math.abs(d[i + 1] - ref[1]) < tol && Math.abs(d[i + 2] - ref[2]) < tol;
+    const rowPlain = y => { for (let xx = 0; xx < w; xx += 2) if (!same((y * w + xx) * 4)) return false; return true; };
+    const colPlain = (xx, t, b) => { for (let y = t; y <= b; y += 2) if (!same((y * w + xx) * 4)) return false; return true; };
+    let t = 0, b = h - 1, l = 0, r = w - 1;
+    while (t < b && rowPlain(t)) t++;
+    while (b > t && rowPlain(b)) b--;
+    while (l < r && colPlain(l, t, b)) l++;
+    while (r > l && colPlain(r, t, b)) r--;
+    const pad = Math.round(Math.min(w, h) * 0.01);
+    t = Math.max(0, t - pad); b = Math.min(h - 1, b + pad); l = Math.max(0, l - pad); r = Math.min(w - 1, r + pad);
+    if (r - l < 20 || b - t < 10) return c;
+    const o = document.createElement("canvas"); o.width = r - l + 1; o.height = b - t + 1;
+    o.getContext("2d").drawImage(c, l, t, o.width, o.height, 0, 0, o.width, o.height);
+    return o;
+  }
+  const dims = im => ({ w: im.naturalWidth || im.width, h: im.naturalHeight || im.height });
+
+  // ---------- text helpers ----------
+  function setFont(px, weight, fam, ls = 0) { ctx.font = `${weight} ${px}px ${fam}`; if ("letterSpacing" in ctx) ctx.letterSpacing = ls + "px"; }
+  function wrap(text, maxW) {
+    const words = text.split(/\s+/).filter(Boolean), lines = []; let line = "";
+    for (const w of words) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width <= maxW || !line) line = t; else { lines.push(line); line = w; } }
+    if (line) lines.push(line); return lines;
+  }
+  function wrapRich(src, maxW) {
+    // "*x*" marks the highlighted phrase. A word is a run of pieces with no space between them,
+    // so "*resigned*." stays one word: "resigned" highlighted, "." plain, no gap.
+    const words = []; let hl = false, cur = "", word = [];
+    const flush = () => { if (cur) { word.push({ w: cur, hl }); cur = ""; } };
+    for (const ch of src) {
+      if (ch === "*") { flush(); hl = !hl; }
+      else if (/\s/.test(ch)) { flush(); if (word.length) { words.push(word); word = []; } }
+      else cur += ch;
+    }
+    flush(); if (word.length) words.push(word);
+    const space = ctx.measureText(" ").width, lines = []; let line = [], lw = 0;
+    for (const wd of words) {
+      const ww = wd.reduce((a, p) => a + ctx.measureText(p.w).width, 0);
+      if (line.length && lw + space + ww > maxW) { lines.push(line); line = []; lw = 0; }
+      lw += (line.length ? space : 0) + ww; line.push(wd);
+    }
+    if (line.length) lines.push(line); return lines;
+  }
+  function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+
+  // ---------- layout ----------
+  function measure(v, s, gap, showBody) {
+    const hasPhoto = !!state.photo;
+    const photoW = hasPhoto ? Math.round((ZW - 26) * 0.38) : 0;
+    const cardW = hasPhoto ? ZW - 26 - photoW : ZW;
+    const padX = hasPhoto ? 20 : 28, padT = hasPhoto ? 22 : 28, padB = hasPhoto ? 16 : 20;
+    let hw = cardW - padX * 2, hh = 0;
+    if (state.head) { const d = dims(state.head); hh = d.h * hw / d.w; const cap = hasPhoto ? 430 : 360; if (hh > cap) { hw = hw * cap / hh; hh = cap; } }
+    const siteH = v.site ? (hasPhoto ? 10 + 1 + 10 + 24 : 14 + 1 + 12 + 27) : 0;
+    const cardContent = padT + (hh || 120) + siteH + padB;
+    const rowH = Math.max(cardContent, hasPhoto ? 360 : 0);
+
+    setFont(92 * s, 800, F.head); const hookLines = wrapRich(v.hook || " ", ZW); const hookH = hookLines.length * 92 * s;
+    setFont(32 * s, 600, F.text); const bodyLines = showBody && v.body ? wrap(v.body, ZW) : []; const bodyH = bodyLines.length * 32 * s * 1.42;
+    const takeLines = v.take ? wrap(v.take, ZW - 34) : []; const takeH = v.take ? 6 + 22 * 1.3 + 8 + takeLines.length * 32 * s * 1.38 + 6 : 0;
+    const metaH = 46;
+    const blocks = [metaH, rowH, hookH]; if (bodyH) blocks.push(bodyH); if (takeH) blocks.push(takeH);
+    const total = blocks.reduce((a, b) => a + b, 0) + gap * (blocks.length - 1);
+    return { s, gap, hasPhoto, photoW, cardW, padX, padT, padB, hw, hh, siteH, cardContent, rowH, hookLines, hookH, bodyLines, bodyH, takeLines, takeH, metaH, total };
+  }
+  function fit(v) {
+    const zh = ZBOT - ZTOP; let gap = 36, s = 1, showBody = true, m = measure(v, s, gap, showBody);
+    if (m.total > zh) { gap = 28; m = measure(v, s, gap, showBody); }
+    while (m.total > zh && s > 0.85) { s -= 0.03; m = measure(v, s, gap, showBody); }
+    if (m.total > zh && v.body) { showBody = false; s = 1; m = measure(v, s, gap, showBody); while (m.total > zh && s > 0.85) { s -= 0.03; m = measure(v, s, gap, showBody); } }
+    while (m.total > zh && s > 0.72) { s -= 0.03; m = measure(v, s, gap, showBody); }
+    m.fits = m.total <= zh; m.droppedBody = !showBody && !!v.body; return m;
+  }
+
+  // ---------- drawing ----------
+  function drawCard(m, v, x, y) {
+    const w = m.cardW, h = m.rowH;
+    ctx.save(); ctx.translate(x + w / 2, y + h / 2); ctx.rotate(-1.2 * Math.PI / 180); ctx.translate(-w / 2, -h / 2);
+    ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 70; ctx.shadowOffsetY = 30; rrect(0, 0, w, h, 30); ctx.fillStyle = "#fff"; ctx.fill(); ctx.restore();
+    rrect(0, 0, w, h, 30); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(123,124,255,.35)"; ctx.stroke();
+    ctx.save(); rrect(0, 0, w, h, 30); ctx.clip();
+    let cy = (h - m.cardContent) / 2 + m.padT;
+    if (state.head) { ctx.drawImage(state.head, m.padX + (w - m.padX * 2 - m.hw) / 2, cy, m.hw, m.hh); cy += m.hh; }
+    else { setFont(26, 600, F.text); ctx.fillStyle = "#9a9aa8"; ctx.fillText("Add a headline screenshot", m.padX, cy + 70); cy += 120; }
+    if (v.site) {
+      const mt = m.hasPhoto ? 10 : 14, pt = m.hasPhoto ? 10 : 12, fs = m.hasPhoto ? 18 : 21;
+      cy += mt; ctx.fillStyle = C.rule; ctx.fillRect(m.padX, cy, w - m.padX * 2, 1); cy += 1 + pt;
+      ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(m.padX + 5, cy + fs * 0.62, 5, 0, Math.PI * 2); ctx.fill();
+      setFont(fs, 500, F.text, fs * 0.02); ctx.fillStyle = C.site; ctx.textBaseline = "alphabetic"; ctx.fillText(v.site, m.padX + 20, cy + fs * 0.95);
+    }
+    ctx.restore(); ctx.restore();
+  }
+  function drawPhoto(m, v, x, y) {
+    const w = m.photoW, h = m.rowH, img = state.photo, d = dims(img);
+    ctx.save(); ctx.translate(x + w / 2, y + h / 2); ctx.rotate(1.6 * Math.PI / 180); ctx.translate(-w / 2, -h / 2);
+    ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 70; ctx.shadowOffsetY = 30; rrect(0, 0, w, h, 30); ctx.fillStyle = "#222"; ctx.fill(); ctx.restore();
+    ctx.save(); rrect(0, 0, w, h, 30); ctx.clip();
+    const sc = Math.max(w / d.w, h / d.h), dw = d.w * sc, dh = d.h * sc, fy = (+$("focus").value) / 100;
+    ctx.drawImage(img, (w - dw) / 2, (h - dh) * fy, dw, dh);
+    const g = ctx.createLinearGradient(0, h * 0.7, 0, h); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,.5)"); ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    if (v.credit) { setFont(15, 500, F.text); ctx.fillStyle = "rgba(255,255,255,.82)"; const ls = wrap("Photo: " + v.credit, w - 32); ls.forEach((l, i) => ctx.fillText(l, 16, h - 14 - (ls.length - 1 - i) * 19)); }
+    ctx.restore();
+    rrect(0, 0, w, h, 30); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(123,124,255,.35)"; ctx.stroke();
+    ctx.restore();
+  }
+  function drawZones() {
+    ctx.save(); ctx.fillStyle = "rgba(255,0,60,.28)"; ctx.strokeStyle = "#ff2d55"; ctx.lineWidth = 3; ctx.setLineDash([12, 8]);
+    for (const [x, y, w, h] of [[0, 0, W, 250], [0, 1580, W, 340], [20, 150, 330, 200], [0, 1390, 600, 190]]) { ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h); }
+    ctx.strokeStyle = "#00e5a0"; ctx.strokeRect(ZX, ZTOP, ZW, ZBOT - ZTOP); ctx.restore();
+  }
+  function values() { const v = {}; fields.forEach(f => v[f] = $(f).value.trim()); return v; }
+  function draw(withZones = $("zones").checked) {
+    const v = values();
+    ctx.clearRect(0, 0, W, H); ctx.fillStyle = "#121212"; ctx.fillRect(0, 0, W, H);
+    if (state.bg) ctx.drawImage(state.bg, 0, 0, W, H);
+    const m = fit(v); let y = ZTOP + Math.max(0, (ZBOT - ZTOP - m.total) / 2);
+    ctx.textBaseline = "alphabetic";
+    // meta: tag pill + source · date
+    setFont(22, 700, F.text, 22 * 0.12); const tag = (v.tag || "News").toUpperCase(); const tw = ctx.measureText(tag).width + 36;
+    const pg = ctx.createLinearGradient(ZX, 0, ZX + tw, 0); pg.addColorStop(0, C.accent); pg.addColorStop(1, C.accent2);
+    rrect(ZX, y + 2, tw, 42, 21); ctx.fillStyle = pg; ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillText(tag, ZX + 18, y + 31);
+    setFont(25, 700, F.text, 25 * 0.12); ctx.fillStyle = C.muted; ctx.fillText([v.source, v.date].filter(Boolean).join(" · ").toUpperCase(), ZX + tw + 16, y + 32);
+    y += m.metaH + m.gap;
+    drawCard(m, v, ZX, y); if (m.hasPhoto) drawPhoto(m, v, ZX + m.cardW + 26, y);
+    y += m.rowH + m.gap;
+    setFont(92 * m.s, 800, F.head); const sp = ctx.measureText(" ").width;
+    m.hookLines.forEach((line, i) => {
+      let x = ZX; const by = y + (i + 0.82) * 92 * m.s;
+      line.forEach(wd => { wd.forEach(p => { ctx.fillStyle = p.hl ? C.accent : C.fg; ctx.fillText(p.w, x, by); x += ctx.measureText(p.w).width; }); x += sp; });
+    });
+    y += m.hookH;
+    if (m.bodyH) { y += m.gap; setFont(32 * m.s, 600, F.text); ctx.fillStyle = C.muted; const lh = 32 * m.s * 1.42; m.bodyLines.forEach((l, i) => ctx.fillText(l, ZX, y + i * lh + lh * 0.76)); y += m.bodyH; }
+    if (m.takeH) {
+      y += m.gap; ctx.fillStyle = C.accent; ctx.fillRect(ZX, y, 8, m.takeH);
+      setFont(22, 700, F.text, 22 * 0.16); ctx.fillText("WHAT IT MEANS FOR YOU", ZX + 34, y + 6 + 22);
+      setFont(32 * m.s, 600, F.text); ctx.fillStyle = C.fg; const lh = 32 * m.s * 1.38, top = y + 6 + 22 * 1.3 + 8;
+      m.takeLines.forEach((l, i) => ctx.fillText(l, ZX + 34, top + i * lh + lh * 0.76));
+    }
+    if (withZones) drawZones();
+    const note = $("fitNote");
+    note.className = "note" + (m.fits ? "" : " warn");
+    note.textContent = !m.fits ? "Too much text for the safe area. Shorten the big line or the takeaway." : m.droppedBody ? "The context line was left out so everything fits." : "";
+    $("fname").textContent = fileName();
+    return m;
+  }
+  const fileName = () => {
+    const d = new Date(), iso = d.toISOString().slice(0, 10);
+    const s = ($("hook").value || "story").replace(/\*/g, "").toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60).replace(/-[^-]*$/, m => m.length > 1 ? m : "");
+    return `${iso}-${s || "story"}.png`;
+  };
+
+  // ---------- inputs ----------
+  let raf = 0; const redraw = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => draw()); saveDraft(); };
+  fields.forEach(f => $(f).addEventListener("input", redraw));
+  ["focus", "zones"].forEach(id => $(id).addEventListener("input", redraw));
+  const clearExample = () => { if (state.example) { state.example = false; $("exampleFlag").hidden = true; } };
+
+  async function setHead(src, blob, name) {
+    const img = await loadImg(src); state.headRaw = img; state.headBlob = blob || null;
+    state.head = $("trim").checked ? trimMargins(img) : img;
+    $("headThumb").style.backgroundImage = `url("${src}")`; if (name) $("headName").textContent = name;
+  }
+  async function setPhoto(src, name) {
+    state.photo = src ? await loadImg(src) : null;
+    $("photoThumb").style.backgroundImage = src ? `url("${src}")` : "none"; $("photoName").textContent = name || "No photo";
+  }
+  $("headFile").addEventListener("change", async e => {
+    const f = e.target.files[0]; if (!f) return; clearExample();
+    await setHead(URL.createObjectURL(f), f, f.name); draw();
+  });
+  $("trim").addEventListener("change", () => { if (state.headRaw) { state.head = $("trim").checked ? trimMargins(state.headRaw) : state.headRaw; draw(); } });
+  $("photoFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; clearExample(); await setPhoto(URL.createObjectURL(f), f.name); draw(); });
+  $("photoRemove").addEventListener("click", async () => { await setPhoto(null); $("credit").value = ""; draw(); saveDraft(); });
+  $("saveClose").addEventListener("click", () => { $("saveview").hidden = true; });
+
+  // ---------- drafts (this browser only) ----------
+  function saveDraft() { if (state.example) return; try { const v = {}; fields.forEach(f => v[f] = $(f).value); v.focus = $("focus").value; localStorage.setItem("fb-draft", JSON.stringify(v)); } catch {} }
+
+  // ---------- Claude ----------
+  let samplePromise = null;
+  const getSample = () => (samplePromise ||= (window.claude?.use ? window.claude.use("sample") : Promise.resolve(null)));
+  const askErr = code => ({
+    not_granted: "Claude wasn't allowed for this page. Type the words yourself.",
+    rate_limited: "Too many requests right now. Try again in a minute.",
+    images_unavailable: "Claude can't read images here. Paste the article text and try again.",
+    cancelled: "Stopped.",
+  }[code] || "Claude couldn't write it this time. Try again, or type the words yourself.");
+  $("ask").addEventListener("click", async () => {
+    const st = $("askStatus"), btn = $("ask"); st.className = "status";
+    const sample = await getSample();
+    if (!sample) { st.className = "status err"; st.textContent = "Claude isn't available in this view. Open the page in the Claude app or claude.ai."; return; }
+    if (!state.headBlob && !$("article").value.trim() && !state.example) { st.className = "status err"; st.textContent = "Add a headline screenshot or paste the article text first."; return; }
+    btn.disabled = true; st.textContent = "Reading the headline and writing…";
+    const article = $("article").value.trim();
+    const prompt = `You write Instagram story copy for Fyntrest Bytes, a finance-news story series by Fyntrest, a financial literacy brand for Indian students and young earners.
+The attached image is a screenshot of a news headline${article ? ", and the article text follows" : ""}. Use only facts that appear in them. Never invent numbers, names or quotes.
+
+Write:
+- tag: one word, e.g. India, Global, Markets, Tax, Jobs, Banking
+- source: the publication's name as people know it (e.g. Mint, BBC News, CNBC), or "" if you can't tell
+- site: the publication's web domain without www (e.g. livemint.com), or "" if you can't tell
+- hook: a punchy rewrite of the headline in plain words, at most 10 words. Wrap the one key phrase in *asterisks*.
+- body: 1-2 short sentences of context, facts only.
+- take: 1-2 short sentences on what this means for a student or young earner in India. Practical, not preachy.
+Rules: plain simple English, no em dashes, no hashtags, no emoji.
+Reply with only JSON: {"tag":"","source":"","site":"","hook":"","body":"","take":""}
+${article ? "\nArticle text:\n" + article.slice(0, 6000) : ""}`;
+    try {
+      let images;
+      if (state.headBlob) images = [state.headBlob];
+      else if (state.example && state.headRaw) images = [await new Promise(r => { const c = document.createElement("canvas"); const d = dims(state.headRaw); c.width = d.w; c.height = d.h; c.getContext("2d").drawImage(state.headRaw, 0, 0); c.toBlob(r, "image/png"); })];
+      const out = await sample.json(prompt, images ? { images } : {});
+      for (const k of ["tag", "source", "site", "hook", "body", "take"]) if (typeof out?.[k] === "string" && out[k].trim()) $(k).value = out[k].trim().replace(/\s*—\s*/g, ", ");
+      if (!$("date").value) $("date").value = today();
+      clearExample(); draw(); saveDraft(); st.textContent = "Done. Check the facts against the article before posting.";
+    } catch (e) { st.className = "status err"; st.textContent = askErr(e?.code); }
+    finally { btn.disabled = false; }
+  });
+
+  // ---------- download ----------
+  let dlPromise = null;
+  const getDownloads = () => (dlPromise ||= (window.claude?.use ? window.claude.use("downloads") : Promise.resolve(null)));
+  $("save").addEventListener("click", async () => {
+    const btn = $("save"); btn.disabled = true;
+    draw(false); const blob = await new Promise(r => cv.toBlob(r, "image/png")); draw();
+    try {
+      const dl = await getDownloads();
+      if (dl) {
+        try { await dl.save({ filename: fileName(), data: blob }); return; }
+        catch (e) { if (e?.code === "declined") return; }
+      }
+      $("saveImg").src = URL.createObjectURL(blob); $("saveview").hidden = false;
+    } finally { btn.disabled = false; }
+  });
+
+  // ---------- start ----------
+  async function start() {
+    try { await Promise.all([document.fonts.load('800 92px "Barlow Condensed"'), document.fonts.load('600 32px "Google Sans"'), document.fonts.load('700 22px "Google Sans"'), document.fonts.load('500 21px "Google Sans"')]); } catch {}
+    state.bg = await loadImg(BG_SRC).catch(() => null);
+    let draft = null; try { draft = JSON.parse(localStorage.getItem("fb-draft") || "null"); } catch {}
+    $("date").value = today();
+    await setHead(SAMPLE.headline, null, "Example: CNBC headline");
+    await setPhoto(SAMPLE.photo, "Example: Jensen Huang");
+    if (draft && draft.hook) {
+      // A draft from this browser: keep the words, but images are not stored, so show the example images until new ones are chosen.
+      fields.forEach(f => { if (typeof draft[f] === "string") $(f).value = draft[f]; }); if (draft.focus) $("focus").value = draft.focus;
+    } else {
+      fields.forEach(f => { if (f in SAMPLE) $(f).value = SAMPLE[f]; }); $("focus").value = SAMPLE.focus;
+    }
+    draw();
+    document.fonts.ready.then(() => draw());
+  }
+  start();
+})();
+</script>

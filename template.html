@@ -1,0 +1,150 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Google+Sans:wght@500;600;700&display=block" rel="stylesheet">
+<style>
+  :root {
+    --accent: #7b7cff;      /* "Bytes" blue-violet */
+    --accent-2: #b057a8;    /* logo magenta */
+    --ink: #f4f4f6;
+    --muted: #b9b9c6;
+    --head: "Barlow Condensed", "Arial Narrow", sans-serif;
+    --text: "Google Sans", system-ui, sans-serif;
+    /* Safe content zone: clear of the logo (top), the F mark (bottom-left)
+       and Instagram's own UI (top 250px, bottom ~340px). */
+    --zone-top: 380px;
+    --zone-bottom: 1385px;
+    --zone-x: 64px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; background: #121212; }
+  body {
+    background: url("assets/background.webp") center / 1080px 1920px no-repeat;
+    font-family: var(--text); font-weight: 600;
+    color: var(--ink);
+    position: relative;
+  }
+  #zone {
+    position: absolute;
+    left: var(--zone-x); right: var(--zone-x);
+    top: var(--zone-top); bottom: calc(1920px - var(--zone-bottom));
+    display: flex; flex-direction: column; justify-content: center; gap: 36px;
+  }
+  .meta { display: flex; align-items: center; gap: 16px; font-size: 25px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .tag { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; padding: 8px 18px; border-radius: 999px; font-size: 22px; }
+  .src { color: var(--muted); }
+
+  /* Screenshot card (+ photo beside it when asked for) */
+  .row { display: flex; gap: 26px; align-items: stretch; flex: 0 0 auto; }
+  .card {
+    flex: 1 1 auto;
+    background: #fff; border-radius: 30px; overflow: hidden;
+    box-shadow: 0 30px 70px rgba(0,0,0,.55), 0 0 0 2px rgba(123,124,255,.35);
+    transform: rotate(-1.2deg);
+    padding: 28px 28px 20px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .card img { width: 100%; display: block; }
+  .site {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid #e6e6ea;
+    font-size: 21px; font-weight: 500; color: #8a8a96; letter-spacing: .02em;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .site::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex: none; }
+
+  .photo {
+    flex: 0 0 38%; position: relative; min-height: 360px;
+    border-radius: 30px; overflow: hidden;
+    box-shadow: 0 30px 70px rgba(0,0,0,.55), 0 0 0 2px rgba(123,124,255,.35);
+    transform: rotate(1.6deg);
+  }
+  .photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 70%, rgba(0,0,0,.5) 100%); }
+  .credit { position: absolute; left: 16px; right: 16px; bottom: 12px; z-index: 2; font-size: 15px; font-weight: 500; color: rgba(255,255,255,.8); line-height: 1.25; }
+  /* With a photo the card is narrower, so give the headline less padding. */
+  body.has-photo .card { padding: 22px 20px 16px; }
+  body.has-photo .site { font-size: 18px; margin-top: 10px; padding-top: 10px; }
+
+  .hook {
+    font-family: var(--head); font-weight: 800;
+    font-size: 92px; line-height: 1; letter-spacing: -.005em;
+  }
+  .hook em { font-style: normal; color: var(--accent); }
+  .body { font-size: 32px; line-height: 1.42; color: var(--muted); font-weight: 600; }
+  .take {
+    border-left: 8px solid var(--accent); padding: 6px 0 6px 26px;
+    font-size: 32px; line-height: 1.38; font-weight: 600;
+  }
+  .take b { display: block; font-size: 22px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; font-weight: 700; }
+
+  /* --debug: shows the no-go zones */
+  .nogo { position: absolute; left: 0; right: 0; background: rgba(255,0,60,.28); border: 3px dashed #ff2d55; display: none; }
+  body.debug .nogo { display: block; }
+  body.debug #zone { outline: 3px dashed #00e5a0; }
+</style>
+</head>
+<body>
+  <div class="nogo" style="top:0;height:250px"></div>
+  <div class="nogo" style="top:1580px;bottom:0"></div>
+  <div class="nogo" style="top:150px;height:200px;left:20px;right:auto;width:330px"></div>
+  <div class="nogo" style="top:1390px;height:190px;left:0;right:auto;width:600px"></div>
+
+  <main id="zone">
+    <div class="meta"><span class="tag" id="tag"></span><span class="src" id="src"></span></div>
+    <div class="row">
+      <div class="card" id="card">
+        <img id="headline" alt="">
+        <div class="site" id="site"></div>
+      </div>
+      <div class="photo" id="photo"><img id="photoImg" alt=""><span class="credit" id="credit"></span></div>
+    </div>
+    <div class="hook" id="hook"></div>
+    <div class="body" id="body"></div>
+    <div class="take" id="take"><b>What it means for you</b><span id="takeText"></span></div>
+  </main>
+
+<script>
+  // Filled in by make_stories.py
+  const S = window.__STORY__;
+  const $ = id => document.getElementById(id);
+  $('tag').textContent = S.tag;
+  $('src').textContent = S.source + (S.date ? ' · ' + S.date : '');
+  $('headline').src = S.headline;
+  $('site').textContent = S.site;
+  if (S.photo) {
+    $('photoImg').src = S.photo;
+    $('photoImg').style.objectPosition = S.focus || 'center 30%';
+    $('credit').textContent = S.credit ? 'Photo: ' + S.credit : '';
+    document.body.classList.add('has-photo');
+  } else $('photo').remove();
+  $('hook').innerHTML = S.hook;           // may contain <em>highlight</em>
+  $('body').textContent = S.body || '';
+  if (!S.body) $('body').remove();
+  $('takeText').textContent = S.takeaway;
+  if (!S.takeaway) $('take').remove();
+  if (S.debug) document.body.classList.add('debug');
+
+  // Auto-fit: tighten spacing and type until everything sits inside the safe zone;
+  // as a last resort drop the context line (the takeaway always stays).
+  window.__fit = async () => {
+    await document.fonts.ready;
+    await Promise.all([...document.images].map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; })));
+    const zone = $('zone');
+    const over = () => zone.scrollHeight > zone.clientHeight + 1;
+    let scale = 1;
+    const setType = () => { for (const [id, px] of [['hook', 92], ['body', 32], ['take', 32]]) { const el = $(id); if (el) el.style.fontSize = (px * scale) + 'px'; } };
+    const shrinkType = floor => { while (over() && scale > floor) { scale -= 0.03; setType(); } };
+    if (over()) zone.style.gap = '28px';
+    shrinkType(0.85);
+    if (over() && $('body')) { $('body').remove(); scale = 1; setType(); shrinkType(0.85); }
+    shrinkType(0.72);
+    return {
+      fits: !over(),
+      fonts: ['800 92px "Barlow Condensed"', '600 32px "Google Sans"'].every(f => document.fonts.check(f)),
+    };
+  };
+</script>
+</body>
+</html>

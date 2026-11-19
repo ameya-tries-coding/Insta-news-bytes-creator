@@ -1,0 +1,23 @@
+# generated stories, screenshots and news dumps
+out/
+artifact/fyntrest-bytes-maker.html
+stories-*.json
+
+# dependencies, builds and local caches
+node_modules/
+cloudflare/dist/
+cloudflare/.wrangler/
+.edge-profile/
+__pycache__/
+*.pyc
+
+# secrets (never commit)
+.env
+.dev.vars
+*.key
+
+# third-party photos (licensed per photo; keep out of the repo)
+assets/photos/
+
+# earlier Hugging Face experiment (Docker Spaces are no longer free), kept locally only
+space/
