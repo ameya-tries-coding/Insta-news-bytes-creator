@@ -1,72 +1,122 @@
-# Fyntrest Bytes
+# Insta News Bytes Creator
 
-Turns a finance news article into a branded 1080×1920 Instagram story: the article's news photo, a short punchy line, two lines of context, "What it means for you" for Indian students and young earners, and the source at the bottom. All of it is drawn on the Fyntrest Bytes background, inside Instagram's safe zones. (The laptop tools use a screenshot of the headline instead of the photo.)
+Turn any finance news article into a ready-to-post Instagram story in seconds.
 
-There are three ways to make one, all free to run:
+Paste a news link (or just type a topic like "RBI repo rate") and get a 1080×1920 story with:
 
-| | Who uses it | How |
+- the article's news photo
+- a short, punchy headline in plain words
+- two lines of context
+- **What it means for you**: a takeaway for students and young earners
+- the source, credited at the bottom
+
+It was built for **Fyntrest Bytes**, the finance-news story series by [Fyntrest](https://beacons.ai/fyntrest), a financial literacy brand for young people in India. The code works for any brand: swap in your own background, colours and wording.
+
+**Everything runs on free tiers.** No paid APIs, no servers to pay for.
+
+---
+
+## Ways to use it
+
+| | Best for | What you do |
 |---|---|---|
-| **Team web app** (`cloudflare/`) | Anyone on the team, on a phone | Paste a link or type a topic; story with the news photo. Live at https://fyntrest-bytes.fyntrest-bytes.workers.dev |
-| **Laptop tools** (repo root) | One person at a laptop, with Claude Code | Fetch the day's news, write `stories.json`, render the PNGs |
-| **Claude Maker page** (`artifact/`) | Team members with Claude accounts | Upload a headline screenshot; Claude drafts the words in the page |
+| **Web app** (`cloudflare/`) | A team, on their phones | Open a link, paste a news URL or type a topic, tap **Make story**, then **Share** to Instagram |
+| **Laptop tools** (repo root) | One person making a daily batch | Fetch the day's headlines, pick stories, render the images with a script |
+| **Claude Maker page** (`artifact/`) | People who use Claude | Upload a screenshot of a headline; Claude writes the words inside the page |
 
-## Team web app (Cloudflare Workers, free plan)
+---
 
-```
-phone ──POST /api/story {query}──▶ Worker (src/worker.js)
-                                     ├─ topic? → search free publisher RSS feeds (ET, Mint, Business Standard, BBC, CNBC)
-                                     ├─ plain download of the article page → title, summary, text, preview photo (og:image)
-                                     │   (only if the site refuses: Cloudflare's headless browser reads it instead)
-                                     ├─ download the photo → data: URL (the phone's canvas can't load other sites' images)
-                                     └─ Workers AI (Llama 3.3 70B) → tag, source, hook, body, takeaway (JSON)
-phone ◀── photo + text ─────────────┘
-phone draws the story on <canvas> (public/index.html) → Share (Web Share API) / Download
-```
+## The web app
 
-Story layout, top to bottom: tag · date, news photo (a headline card when the article has none), the big line, context, "What it means for you", and **Source: publication · website**. The image is drawn on the phone, so editing the words re-renders instantly and costs no server time.
+### How it works
 
-**Free-plan budget.** Normal stories use no browser at all (a plain download plus Workers AI), so there is no practical daily cap. Workers AI's free daily allowance covers well over a hundred stories. The headless browser is only a backup for sites that refuse plain downloads; it has 10 browser-minutes a day (resets 00:00 UTC = 5:30 am IST) and 1 new browser every 20 s, and the Worker closes it as soon as the page is read.
+1. **Find the article.** If you typed a topic, the app searches the latest headlines from free news feeds (Economic Times, Mint, Business Standard, BBC, CNBC).
+2. **Read it.** The server downloads the article page and picks out the title, summary, text and the photo the site uses for link previews.
+3. **Write the words.** A free AI model (Llama 3.3 on Cloudflare Workers AI) writes the tag, headline, context and takeaway using only facts from the article.
+4. **Draw the story.** Your phone draws the final image, so you can edit any word and see the change instantly. Then share it straight to Instagram or download it.
 
-**Files**
-- `src/worker.js`: API (`/api/story`, `/api/config`, `/api/status` for backup-browser diagnostics) and static assets
-- `public/index.html`: the phone page and the story renderer
-- `wrangler.jsonc`: bindings (`MYBROWSER`, `AI`, `ASSETS`)
+If a site blocks downloads, a headless browser reads the page instead. If an article has no usable photo, the story shows its headline as a clean card.
 
-**Deploy**
-```
-cd cloudflare
+### Run your own copy (free)
+
+You need a free [Cloudflare account](https://dash.cloudflare.com/sign-up) and [Node.js](https://nodejs.org).
+
+```bash
+git clone https://github.com/ameya-tries-coding/Insta-news-bytes-creator.git
+cd Insta-news-bytes-creator/cloudflare
 npm install
-npx wrangler login          # browser OAuth; click Allow within ~2 minutes
-npx wrangler deploy
-npx wrangler secret put TEAM_PASSWORD   # optional: the page then asks for it
+npx wrangler login     # opens Cloudflare in your browser: click Allow within ~2 minutes
+npx wrangler deploy    # prints your app's link, e.g. https://your-app.your-name.workers.dev
 ```
-Optional `GEMINI_API_KEY` secret: only used if Workers AI fails, and only works if Gemini's free tier is available to that Google project (it was not for ours).
 
-**Known limits**
-- Google News and GDELT block Cloudflare's servers, so topic search uses publisher RSS feeds. Moneycontrol's feed also blocks Cloudflare.
-- Some sites refuse plain downloads from Cloudflare; those go through the backup browser (runs in Europe, so the Worker clicks "Accept" on cookie walls). If no photo can be found, the story shows the headline as a card.
-- News photos belong to the publishers. The story credits the source at the bottom; check with your own policy before reposting at scale.
-- `wrangler dev` cannot start the local browser on Windows ("spawn UNKNOWN"), so the backup-browser path can only be tested on the deployed Worker.
+Optional: ask for a password before anyone can make a story.
 
-## Laptop tools (Python 3 + Playwright, uses the installed Microsoft Edge)
-
+```bash
+npx wrangler secret put TEAM_PASSWORD
 ```
+
+### Free-tier limits
+
+- **Stories:** normal stories use only a page download and the AI model. Cloudflare's free AI allowance covers well over a hundred stories a day.
+- **Backup browser:** used only for sites that block downloads. The free plan gives 10 browser-minutes a day (resets at midnight UTC) and starts one new browser every 20 seconds. The app closes the browser as soon as it has read the page and tells you clearly when the allowance is used up.
+
+---
+
+## The laptop tools
+
+Python scripts that use the Microsoft Edge (or Chromium) already on your computer. These make the original version of the story, with a screenshot of the article's headline instead of the news photo.
+
+```bash
 pip install playwright
-python fetch_news.py                 # out/news.json: ~150-200 headlines from free RSS feeds
-# write stories.json (Claude Code does this from news.json; see the format in make_stories.py)
-python make_stories.py               # out/<date>/<date>-<story-name>.png
-python make_stories.py --debug       # draws the no-go zones for checking layout
+python fetch_news.py            # saves ~150-200 recent headlines to out/news.json
+# write stories.json: pick stories and write the words (see the format at the top of make_stories.py)
+python make_stories.py          # renders out/<date>/<date>-<story-name>.png
+python make_stories.py --debug  # same, with Instagram's no-go zones drawn on top
 ```
-- `shot.py`: headline screenshot (and optional lead photo) with popups and images removed
-- `template.html`: the story layout. Same geometry as the web app.
-- Layout rules: by default, screenshot + text. A photo appears only when a story's `"image"` is set ("article", a URL, or a local path), placed to the right of the screenshot. A credit is required for Wikimedia Commons photos (`"credit"`).
 
-## Claude Maker page
+- `fetch_news.py`: free RSS feeds, no API keys. Edit the list at the top to change sources.
+- `shot.py`: screenshots just the headline, with cookie popups, ads and images removed.
+- `template.html`: the story layout.
+- A photo can be added to any story with `"image"` in `stories.json`: `"article"` uses the article's own photo, or give a URL or file path. Add `"credit"` for photos that need attribution, such as Wikimedia Commons.
 
-`artifact/src.html` is a single-page tool published as a Claude artifact. `python artifact/build.py` inlines the background and sample images into `artifact/fyntrest-bytes-maker.html`, which is then republished. It uses the viewer's own Claude account (`sample` capability) to read the uploaded screenshot and draft the text.
+## The Claude Maker page
 
-## Design
+`artifact/src.html` is a single-page tool that runs as a [Claude](https://claude.ai) artifact. You upload a headline screenshot, Claude reads it and drafts the text, and you download the story. Run `python artifact/build.py` to bundle the images into one HTML file before publishing it.
 
-- Background: `assets/background.webp` (Fyntrest Bytes logo top-left, F mark bottom-left)
-- Safe zone: x 64–1016, y ~380–1385 (clear of the logo, the F mark and Instagram's top/bottom UI)
-- Fonts: Barlow Condensed ExtraBold for the hook, Google Sans SemiBold for everything else, accent #7b7cff
+---
+
+## Make it yours
+
+- **Background:** replace `assets/background.webp` and `cloudflare/public/background.webp` (1080×1920).
+- **Safe area:** content stays inside x 64–1016 and y 380–1385, clear of the logo, the corner graphic and Instagram's own buttons. Change `ZTOP`, `ZBOT` and `ZX` in `cloudflare/public/index.html` (and `--zone-*` in `template.html`) to fit your design.
+- **Fonts and colours:** Barlow Condensed ExtraBold for the headline, Google Sans SemiBold for the rest, accent `#7b7cff`. All set near the top of `cloudflare/public/index.html` and `template.html`.
+- **Voice and audience:** the AI instructions are in `PROMPT` in `cloudflare/src/worker.js`.
+- **News sources:** `FEEDS` in `cloudflare/src/worker.js` and in `fetch_news.py`.
+
+---
+
+## Good to know
+
+- **Check before posting.** The AI is told to use only facts from the article, but always read the words against the source.
+- **Photos belong to the publishers.** Every story credits the source. Follow your own policy, and the publishers' terms, before reposting at scale.
+- **Some sites refuse automated readers.** Google News, GDELT and Moneycontrol's feed block Cloudflare's servers, which is why topic search uses publisher feeds directly. Pasting a link works for most sites.
+- **Testing locally:** `wrangler dev` can't start the backup browser on Windows ("spawn UNKNOWN"). The main download path works locally; the browser path only works once deployed.
+
+## Project layout
+
+```
+cloudflare/          the web app (Cloudflare Worker + phone page)
+  src/worker.js        finds and reads articles, writes the text
+  public/index.html    the page and the story renderer
+  wrangler.jsonc       Cloudflare settings
+fetch_news.py        laptop: fetch headlines
+shot.py              laptop: headline screenshots
+make_stories.py      laptop: render stories from stories.json
+template.html        laptop: story layout
+artifact/            Claude Maker page
+assets/              background image
+```
+
+## Brand assets
+
+The Fyntrest name, logo and the Fyntrest Bytes background belong to Fyntrest. Please use your own branding if you build on this project.
