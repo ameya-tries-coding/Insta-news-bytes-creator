@@ -2,7 +2,7 @@
 
 Turn any finance news article into a ready-to-post Instagram story in seconds.
 
-Paste a news link (or just type a topic like "RBI repo rate") and get a 1080×1920 story with:
+Pick from **Today's picks** (the stories an AI thinks matter most right now), search a topic like "RBI repo rate" and choose from the matching news, or paste any news link. You get a 1080×1920 story with:
 
 - the article's news photo
 - a short, punchy headline in plain words
@@ -20,7 +20,7 @@ It was built for **Fyntrest Bytes**, the finance-news story series by [Fyntrest]
 
 | | Best for | What you do |
 |---|---|---|
-| **Web app** (`cloudflare/`) | A team, on their phones | Open a link, paste a news URL or type a topic, tap **Make story**, then **Share** to Instagram |
+| **Web app** (`cloudflare/`) | A team, on their phones | Tap one of Today's picks, or search a topic and tap a result, or paste a link. Then **Share** to Instagram |
 | **Laptop tools** (repo root) | One person making a daily batch | Fetch the day's headlines, pick stories, render the images with a script |
 | **Claude Maker page** (`artifact/`) | People who use Claude | Upload a screenshot of a headline; Claude writes the words inside the page |
 
@@ -30,7 +30,10 @@ It was built for **Fyntrest Bytes**, the finance-news story series by [Fyntrest]
 
 ### How it works
 
-1. **Find the article.** If you typed a topic, the app searches the latest headlines from free news feeds (Economic Times, Mint, Business Standard, BBC, CNBC).
+1. **Find the article.**
+   - **Today's picks:** every 3 hours the app reads the latest ~150 headlines and the AI chooses the 6 that matter most to students and young earners, each with a one-line reason. Picks are saved (Cloudflare KV) so every visitor sees them instantly.
+   - **Search:** type a topic and pick from up to 10 matching recent stories, with photo, source and time. Repeats of the same story from different sites are filtered out.
+   - News comes from free feeds: Economic Times, Mint, Business Standard, BusinessLine, NDTV Profit, Times of India, Hindustan Times, The Hindu, BBC and CNBC.
 2. **Read it.** The server downloads the article page and picks out the title, summary, text and the photo the site uses for link previews.
 3. **Write the words.** A free AI model (Llama 3.3 on Cloudflare Workers AI) writes the tag, headline, context and takeaway using only facts from the article.
 4. **Draw the story.** Your phone draws the final image, so you can edit any word and see the change instantly. Then share it straight to Instagram or download it.
@@ -46,6 +49,7 @@ git clone https://github.com/ameya-tries-coding/Insta-news-bytes-creator.git
 cd Insta-news-bytes-creator/cloudflare
 npm install
 npx wrangler login     # opens Cloudflare in your browser: click Allow within ~2 minutes
+npx wrangler kv namespace create PICKS   # storage for Today's picks; put the printed id in wrangler.jsonc
 npx wrangler deploy    # prints your app's link, e.g. https://your-app.your-name.workers.dev
 ```
 
@@ -58,6 +62,7 @@ npx wrangler secret put TEAM_PASSWORD
 ### Free-tier limits
 
 - **Stories:** normal stories use only a page download and the AI model. Cloudflare's free AI allowance covers well over a hundred stories a day.
+- **Today's picks:** made at most every 3 hours (a Refresh tap reuses picks made in the last 10 minutes), so they cost very little of the AI allowance and about 8 of the 1,000 free daily KV saves.
 - **Backup browser:** used only for sites that block downloads. The free plan gives 10 browser-minutes a day (resets at midnight UTC) and starts one new browser every 20 seconds. The app closes the browser as soon as it has read the page and tells you clearly when the allowance is used up.
 
 ---
@@ -90,7 +95,7 @@ python make_stories.py --debug  # same, with Instagram's no-go zones drawn on to
 - **Background:** replace `assets/background.webp` and `cloudflare/public/background.webp` (1080×1920).
 - **Safe area:** content stays inside x 64–1016 and y 380–1385, clear of the logo, the corner graphic and Instagram's own buttons. Change `ZTOP`, `ZBOT` and `ZX` in `cloudflare/public/index.html` (and `--zone-*` in `template.html`) to fit your design.
 - **Fonts and colours:** Barlow Condensed ExtraBold for the headline, Google Sans SemiBold for the rest, accent `#7b7cff`. All set near the top of `cloudflare/public/index.html` and `template.html`.
-- **Voice and audience:** the AI instructions are in `PROMPT` in `cloudflare/src/worker.js`.
+- **Voice and audience:** the AI instructions are `PROMPT` (story text) and `PICKS_PROMPT` (Today's picks) in `cloudflare/src/worker.js`.
 - **News sources:** `FEEDS` in `cloudflare/src/worker.js` and in `fetch_news.py`.
 
 ---

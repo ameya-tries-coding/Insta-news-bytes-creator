@@ -38,8 +38,22 @@
   .status { font-size: 14px; color: var(--muted); min-height: 1.3em; }
   .status.err { color: var(--danger); }
   .note { font-size: 13px; color: var(--warn); }
-  .left { font-size: 12.5px; color: var(--muted); }
-  .left.out { color: var(--warn); }
+  .listhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .listhead h2 { margin: 0; font: 800 26px/1.1 var(--head); letter-spacing: .01em; }
+  .linkbtn { background: none; border: 0; padding: 4px 0; color: var(--accent); font-size: 14px; font-weight: 600; }
+  .list { display: grid; gap: 10px; }
+  .item { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; align-items: start; text-align: left; width: 100%; padding: 10px; border-radius: 12px; background: #15151a; border: 1px solid var(--line); color: var(--fg); font-weight: 500; }
+  .item:hover { border-color: #46465a; }
+  .item:disabled { opacity: 1; }
+  .item.making { border-color: var(--accent); }
+  .thumb { width: 84px; height: 64px; border-radius: 8px; background: #23232b center / cover no-repeat; overflow: hidden; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .item .t { font-size: 15px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
+  .item .m { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .item .why { font-size: 13px; color: #c9c9ff; margin-top: 5px; }
+  .item .tag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #fff; background: linear-gradient(90deg, var(--accent), var(--accent-2)); padding: 2px 8px; border-radius: 999px; margin-right: 6px; vertical-align: 1px; }
+  .item .making-msg { font-size: 12.5px; color: var(--accent); margin-top: 5px; }
+  .empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
   .note:empty { display: none; }
   .stage { width: 100%; max-width: 360px; justify-self: center; aspect-ratio: 9 / 16; border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 1px var(--line), 0 16px 40px rgba(0,0,0,.5); }
   .stage canvas { width: 100%; height: 100%; display: block; }
@@ -61,19 +75,18 @@
 <main>
   <header>
     <h1>Fyntrest <em>Bytes</em></h1>
-    <p class="sub">Paste a news link or type a topic. Get a ready-to-post story.</p>
+    <p class="sub">Pick today's news, search a topic, or paste a link. Get a ready-to-post story.</p>
   </header>
 
   <form class="card" id="form">
-    <label for="query">News link or topic</label>
-    <input id="query" type="text" autocomplete="off" enterkeyhint="go" placeholder="https://… or e.g. RBI repo rate">
+    <label for="query">Search a topic or paste a news link</label>
+    <input id="query" type="text" autocomplete="off" enterkeyhint="search" placeholder="e.g. RBI repo rate, or https://…">
     <div id="pwWrap" hidden style="display:grid;gap:5px">
       <label for="pw">Team password</label>
       <input id="pw" type="password" autocomplete="current-password">
     </div>
-    <button class="primary" id="go" type="submit">Make story</button>
+    <button class="primary" id="go" type="submit">Find news</button>
     <div class="status" id="status" role="status"></div>
-    <div class="left" id="left" hidden></div>
   </form>
 
   <section class="card" id="result" hidden>
@@ -99,6 +112,15 @@
     </details>
     <p class="hint">Check the facts against the article before posting.</p>
   </section>
+
+  <section class="card" id="listCard">
+    <div class="listhead">
+      <h2 id="listTitle">Today's picks</h2>
+      <button type="button" class="linkbtn" id="listAction">Refresh</button>
+    </div>
+    <p class="hint" id="listHint">Chosen by AI for students and young earners. Tap one to make its story.</p>
+    <div class="list" id="list" aria-live="polite"></div>
+  </section>
 </main>
 
 <div class="saveview" id="saveview" hidden>
@@ -116,18 +138,8 @@
   const store = { get: k => { try { return localStorage.getItem(k) || ""; } catch { return ""; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   let needPw = false, story = null; // story = { img: Image|null, title, note }
 
-  function refreshConfig() {
-    fetch("/api/config").then(r => r.json()).then(c => {
-      needPw = c.password; $("pwWrap").hidden = !needPw; if (!$("pw").value) $("pw").value = store.get("fb-pw");
-      const left = $("left");
-      if (typeof c.storiesLeft === "number") {
-        left.hidden = false;
-        left.textContent = c.storiesLeft > 0 ? `About ${c.storiesLeft} ${c.storiesLeft === 1 ? "story" : "stories"} left today for the whole team.` : "Today's free stories are used up. More from 5:30 am IST.";
-        left.className = "left" + (c.storiesLeft > 0 ? "" : " out");
-      }
-    }).catch(() => {});
-  }
-  refreshConfig();
+  $("pw").value = store.get("fb-pw");
+  const configReady = fetch("/api/config").then(r => r.json()).then(c => { needPw = c.password; $("pwWrap").hidden = !needPw; }).catch(() => {});
 
   // ================= story drawing (same geometry as the desktop template) =================
   const W = 1080, H = 1920, ZX = 64, ZTOP = 380, ZBOT = 1385, ZW = W - ZX * 2;
@@ -254,26 +266,99 @@
 
   // ================= making a story =================
   function setStatus(msg, err = false, busy = false) { const s = $("status"); s.textContent = msg; s.className = "status" + (err ? " err" : "") + (busy ? " busy" : ""); }
-  $("form").addEventListener("submit", async e => {
-    e.preventDefault();
-    const q = $("query").value.trim();
-    if (!q) { setStatus("Paste a news link or type a topic.", true); return; }
-    if (needPw) store.set("fb-pw", $("pw").value);
-    $("go").disabled = true; $("query").blur();
-    setStatus(/^https?:\/\//i.test(q) ? "Opening the article and writing the story" : "Finding the latest news and writing the story", false, true);
+  const isLink = q => /^https?:\/\//i.test(q);
+  const headers = () => ({ "content-type": "application/json", "x-team-password": $("pw").value });
+  async function api(path, opts = {}) {
+    const r = await fetch(path, { ...opts, headers: headers() });
+    const data = await r.json().catch(() => ({ error: "The server didn't answer properly. Try again." }));
+    if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+    return data;
+  }
+  const ago = t => {
+    if (!t) return "";
+    const m = Math.max(1, Math.round((Date.now() - t) / 60000));
+    return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+  };
+
+  // ---- the news list (Today's picks or search results) ----
+  let busy = false;
+  function renderList(items, emptyText) {
+    const list = $("list"); list.textContent = "";
+    if (!items.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = emptyText; list.append(p); return; }
+    for (const it of items) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "item";
+      const th = document.createElement("div"); th.className = "thumb";
+      if (it.image) { const im = document.createElement("img"); im.src = it.image; im.alt = ""; im.loading = "lazy"; im.referrerPolicy = "no-referrer"; im.onerror = () => im.remove(); th.append(im); }
+      const tx = document.createElement("div");
+      const t = document.createElement("div"); t.className = "t";
+      if (it.tag) { const tg = document.createElement("span"); tg.className = "tag"; tg.textContent = it.tag; t.append(tg); }
+      t.append(it.title);
+      const m = document.createElement("div"); m.className = "m"; m.textContent = [it.source, ago(it.time)].filter(Boolean).join(" · ");
+      tx.append(t, m);
+      if (it.why) { const w = document.createElement("div"); w.className = "why"; w.textContent = it.why; tx.append(w); }
+      b.append(th, tx);
+      b.addEventListener("click", () => makeStory(it.link, it, b));
+      list.append(b);
+    }
+  }
+  let listMode = "picks";
+  async function loadPicks(refresh = false) {
+    listMode = "picks";
+    $("listTitle").textContent = "Today's picks"; $("listAction").textContent = "Refresh";
+    $("listHint").textContent = "Chosen by AI for students and young earners. Tap one to make its story.";
+    $("list").innerHTML = '<p class="empty busy">Finding today\'s best stories</p>';
+    try { await configReady; const d = await api("/api/picks" + (refresh ? "?refresh=1" : "")); renderList(d.picks || [], "No picks right now. Search a topic instead."); }
+    catch (err) { $("list").innerHTML = ""; const p = document.createElement("p"); p.className = "empty"; p.textContent = err.message; $("list").append(p); }
+  }
+  async function search(q) {
+    listMode = "search";
+    $("listTitle").textContent = `News about “${q}”`; $("listAction").textContent = "Back to today's picks";
+    $("listHint").textContent = "Latest matching news from Indian and global business sites. Tap one to make its story.";
+    setStatus("Searching the latest news", false, true);
+    try {
+      const d = await api("/api/search?q=" + encodeURIComponent(q));
+      renderList(d.results || [], "No recent news matches that. Try fewer or different words, or paste a link.");
+      setStatus("");
+      $("listCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) { setStatus(err.message, true); }
+  }
+  $("listAction").addEventListener("click", () => { if (listMode === "search") { $("query").value = ""; updateGo(); } loadPicks(listMode === "picks"); });
+
+  // ---- making a story ----
+  async function makeStory(link, pick = null, card = null) {
+    if (busy) return;
+    busy = true; $("go").disabled = true;
+    document.querySelectorAll(".item").forEach(b => b.disabled = true);
+    let msg = null;
+    if (card) { card.classList.add("making"); msg = document.createElement("div"); msg.className = "making-msg busy"; msg.textContent = "Making story"; card.lastChild.append(msg); }
+    setStatus("Reading the article and writing the story", false, true);
     const slow = setTimeout(() => setStatus("Still working, news sites can be slow", false, true), 20000);
     try {
-      const r = await fetch("/api/story", { method: "POST", headers: { "content-type": "application/json", "x-team-password": $("pw").value }, body: JSON.stringify({ query: q }) });
-      const data = await r.json().catch(() => ({ error: "The server didn't answer properly. Try again." }));
-      if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+      const data = await api("/api/story", { method: "POST", body: JSON.stringify({ query: link, pick }) });
       await Promise.all([bgReady, fontsReady]);
       story = { img: data.image ? await loadImg(data.image).catch(() => null) : null, title: data.title, note: data.note || "" };
       KEYS.forEach(k => $("f_" + k).value = (k === "site" ? data.site : data.fields[k]) || "");
       $("result").hidden = false; draw(); setStatus("");
       $("result").scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (err) { setStatus(err.message, true); }
-    finally { clearTimeout(slow); $("go").disabled = false; refreshConfig(); }
+    } catch (err) { setStatus(err.message, true); $("form").scrollIntoView({ behavior: "smooth", block: "start" }); }
+    finally {
+      clearTimeout(slow); busy = false; $("go").disabled = false;
+      document.querySelectorAll(".item").forEach(b => b.disabled = false);
+      if (card) { card.classList.remove("making"); msg?.remove(); }
+    }
+  }
+
+  const updateGo = () => { $("go").textContent = isLink($("query").value.trim()) ? "Make story" : "Find news"; };
+  $("query").addEventListener("input", updateGo);
+  $("form").addEventListener("submit", e => {
+    e.preventDefault();
+    const q = $("query").value.trim();
+    if (!q) { setStatus("Type a topic or paste a news link.", true); return; }
+    if (needPw) store.set("fb-pw", $("pw").value);
+    $("query").blur();
+    if (isLink(q)) makeStory(q); else search(q);
   });
+  loadPicks();
 
   // ================= saving =================
   const fileName = () => {
